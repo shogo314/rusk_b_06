@@ -90,7 +90,7 @@ C++側では各Rusk関数に固有名を付け、全関数の前方宣言を出�
 
 `examples/atcoder/` にはAtCoderの解答100問と公式サンプル279件があります。`cargo test --locked --test atcoder` ですべて、末尾に `abc240_c` などの問題IDを付けるとその問題だけ検証できます。解答ごとに一度C++をコンパイルし、各サンプルの出力を空白区切りのトークンで照合します。サンプル一致は提出・ACの確認を意味しません。問題文は収録せず、出典リンクを解答と一覧に記しています。
 
-AOJの35問・39解答とLibrary Checkerの10解答は、verification-helperで公開テストケースを取得して検証します。Ruskをカスタム言語として登録し、C++20への変換・コンパイルを接続しています。[テストの実行](verification.md) を参照してください。
+AOJの36問・41解答とLibrary Checkerの10解答は、verification-helperで公開テストケースを取得して検証します。Ruskをカスタム言語として登録し、C++20への変換・コンパイルを接続しています。[テストの実行](verification.md) を参照してください。
 
 ```bash
 python3 tools/test.py --suite sanitizers

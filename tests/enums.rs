@@ -203,7 +203,7 @@ fn invalid_enums_patterns_and_inference_have_source_locations() {
         ),
         (
             "enum E { A, B } let x:=E::A;wt match x{A=>1,A=>2,B=>3,};",
-            "duplicate variant",
+            "unreachable match arm",
         ),
         (
             "enum E { A, B } let x:=E::A;wt match x{_=>1,B=>2,};",
@@ -238,7 +238,6 @@ fn invalid_enums_patterns_and_inference_have_source_locations() {
             "enum E<T>{A(T)} let x:=E::<Int,Int>::A(1);",
             "type argument count mismatch",
         ),
-        ("enum E { A } wt match 1{A=>2,};", "requires an enum"),
         (
             "enum E { A(Int) } let x:=E::A(1);match x{A(n)=>{wt n;}}wt n;",
             "unknown",

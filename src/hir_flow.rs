@@ -16,7 +16,10 @@ fn prune(body: &mut Body) -> bool {
             return false;
         }
         exits = match op {
-            Instruction::Return(_) | Instruction::Break(_) | Instruction::Continue(_) => true,
+            Instruction::Return(_)
+            | Instruction::Break(_)
+            | Instruction::Continue(_)
+            | Instruction::Unreachable => true,
             Instruction::Scope(body) => prune(body),
             Instruction::If { yes, no, .. } => {
                 let a = prune(yes);

@@ -89,17 +89,17 @@ impl Compiler {
 
     pub(super) fn if_expression(
         &mut self,
-        condition: &Expr,
+        condition: &Condition,
         yes: &Expr,
         no: &Expr,
         expected: Option<&str>,
         span: &Span,
     ) -> Result<Value, String> {
-        let condition = self.condition(condition)?;
+        let (condition, bindings) = self.pattern_condition(condition)?;
         self.conditional(
             condition,
             expected,
-            |c, hint| c.expr(yes, hint),
+            |c, hint| c.scoped_pattern_values(&bindings, |c| c.expr(yes, hint)),
             |c, ty| c.expr(no, ty),
             span,
         )

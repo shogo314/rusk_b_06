@@ -357,14 +357,15 @@ fn substitute_expr(expr: &mut Expr, bindings: &BTreeMap<String, String>) {
         ExprKind::Match(value, arms) => {
             substitute_expr(value, bindings);
             for arm in arms {
-                if arm.name.text.contains("::") {
-                    substitute_reference(&mut arm.name, bindings);
+                substitute_pattern(&mut arm.pattern, bindings);
+                if let Some(guard) = &mut arm.guard {
+                    substitute_expr(guard, bindings);
                 }
                 substitute_expr(&mut arm.body, bindings);
             }
         }
         ExprKind::If(a, b, c) => {
-            substitute_expr(a, bindings);
+            substitute_condition(a, bindings);
             substitute_expr(b, bindings);
             substitute_expr(c, bindings);
         }
@@ -456,10 +457,15 @@ fn substitute_statement(stmt: &mut Stmt, bindings: &BTreeMap<String, String>) {
             }
         }
         Stmt::Labeled(_, body) => substitute_statement(body, bindings),
-        Stmt::If(condition, body, other)
-        | Stmt::While(condition, body, other)
-        | Stmt::For(_, condition, body, other) => {
-            substitute_expr(condition, bindings);
+        Stmt::If(condition, body, other) | Stmt::While(condition, body, other) => {
+            substitute_condition(condition, bindings);
+            substitute_statement(body, bindings);
+            if let Some(other) = other {
+                substitute_statement(other, bindings);
+            }
+        }
+        Stmt::For(_, source, body, other) => {
+            substitute_expr(source, bindings);
             substitute_statement(body, bindings);
             if let Some(other) = other {
                 substitute_statement(other, bindings);
@@ -467,5 +473,41 @@ fn substitute_statement(stmt: &mut Stmt, bindings: &BTreeMap<String, String>) {
         }
         Stmt::Loop(body) => substitute_statement(body, bindings),
         _ => {}
+    }
+}
+
+fn substitute_pattern(p: &mut Pattern, bindings: &BTreeMap<String, String>) {
+    match &mut p.kind {
+        PatternKind::Named(n, children) => {
+            if n.text.contains("::") {
+                substitute_reference(n, bindings);
+            }
+            if let Some(children) = children {
+                for p in children {
+                    substitute_pattern(p, bindings);
+                }
+            }
+        }
+        PatternKind::Tuple(items) | PatternKind::Or(items) => {
+            for p in items {
+                substitute_pattern(p, bindings);
+            }
+        }
+        PatternKind::Record(n, fields, _) => {
+            substitute_name(n, bindings);
+            for (_, p) in fields {
+                substitute_pattern(p, bindings);
+            }
+        }
+        PatternKind::Literal(..) => {}
+    }
+}
+fn substitute_condition(c: &mut Condition, bindings: &BTreeMap<String, String>) {
+    match c {
+        Condition::Expr(e) => substitute_expr(e, bindings),
+        Condition::Let(p, e) => {
+            substitute_pattern(p, bindings);
+            substitute_expr(e, bindings);
+        }
     }
 }

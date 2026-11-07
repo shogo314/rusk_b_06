@@ -164,6 +164,7 @@ impl Lower {
                     self.emit(Operation::Release(cleanup));
                     self.terminate(Terminator::Jump(dest));
                 }
+                Instruction::Unreachable => self.terminate(Terminator::Unreachable),
                 Instruction::Return(value) => self.terminate(Terminator::Return {
                     value: value.clone(),
                     cleanup: self.cleanup(0),

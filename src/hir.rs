@@ -96,6 +96,7 @@ pub(crate) enum Instruction {
     Break(LoopId),
     Continue(LoopId),
     Return(Option<Value>),
+    Unreachable,
 }
 #[derive(Clone, Default, Debug)]
 pub(crate) struct Body {

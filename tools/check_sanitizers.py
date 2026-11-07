@@ -9,6 +9,22 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = [
+    ((ROOT/'examples/beta06/patterns.rusk').read_text(),b'',b'6\n2 3\n1\n3\ndone\n'),
+    ('''struct Row{x:Int;}
+let e:=Some([1]);let held:Vec<Int>:=[];
+wt match e{Some(row) if {held:=row;e=None;row[0]=2;false}=>100,Some(row)=>row[0],None=>0,};
+wt held;
+let text:="abc";let c:=text[0];
+let f:=(o:Option<Int>)=>if let Some(c)=o{c}else{0};
+c:='Q';text.push_back('!');wt f(Some(3)),text;
+let n:=0;
+outer:while let Some(c)=if n<2{Some(text[0])}else{None}{n+=1;if n==1{continue outer;}break outer;}
+text.push_back('?');wt text;
+let view:="xyz";
+let chosen:=match Some('a'){Some(c) if {c:=view[0];false}=>c,Some(c)=>{view.push_back('!');c}None=>'?',};wt chosen,view;
+fn pick(s:Str)->Char{return match Some('a'){Some(c) if {c:=s[0];true}=>c,Some(c)=>c,None=>'?',};}
+let ref:=pick(view);ref='Z';ref:='Q';view.push_back('?');wt view;
+''',b'',b'2\n2\n3 abc!\nabc!?\na xyz!\nZyz!?\n'),
     ((ROOT/'examples/beta05/enums.rusk').read_text(),b'',b'5\n5\n8\n'),
     ('''enum Cell<T>{Full(T),Empty}
 let text:="abc";let cell:=Cell::Full(text[0]);let alias:=cell;

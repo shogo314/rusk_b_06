@@ -1,4 +1,6 @@
-use crate::ast::{Binding, Expr, ExprKind, Initializer, Name, Span, Stmt};
+use crate::ast::{
+    Binding, Condition, Expr, ExprKind, Initializer, Name, Pattern, PatternKind, Span, Stmt,
+};
 use crate::hir::{Body, Call, Instruction, Literal, Place, Rvalue, Value, ValueId};
 use std::collections::{BTreeMap, BTreeSet};
 mod callables;
@@ -10,6 +12,7 @@ mod flow;
 mod generics;
 mod higher_order;
 mod ir_types;
+mod patterns;
 mod records;
 mod tuples;
 
@@ -52,6 +55,7 @@ pub struct Compiler {
     lambda_types: BTreeMap<String, String>,
     iterator_types: BTreeMap<String, higher_order::IteratorType>,
     lambda_counter: usize,
+    capture_contexts: Vec<callables::CaptureContext>,
     current_function: Option<usize>,
     records: BTreeMap<String, records::Record>,
     prepared_records: BTreeSet<String>,
@@ -508,12 +512,8 @@ impl Compiler {
         self.pending_temps.push(cpp);
         value
     }
-    fn find_var(&self, n: &Name) -> Result<Variable, String> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|s| s.get(&n.text))
-            .cloned()
+    fn find_var(&mut self, n: &Name) -> Result<Variable, String> {
+        self.lookup_variable(n, false)?
             .ok_or_else(|| n.span.error(format!("unknown variable '{}'", n.text)))
     }
     fn declare(&mut self, n: &Name, ty: String, value: Option<Value>) -> Result<(), String> {
@@ -844,12 +844,13 @@ impl Compiler {
                 self.call("__write__", vec![newline], None, &span)?;
             }
             Stmt::If(cond, yes, no) => {
-                let cond = self.condition(cond)?;
+                let span = cond.span().clone();
+                let (cond, bindings) = self.pattern_condition(cond)?;
                 if self.diverged {
                     return Ok(());
                 }
                 let before = self.scopes.clone();
-                let yes_body = self.capture(|c| c.statement(yes))?;
+                let yes_body = self.capture(|c| c.pattern_statement(&bindings, yes, &span))?;
                 let yes_state = self.scopes.clone();
                 let yes_exit = self.diverged;
                 self.scopes = before;
@@ -877,7 +878,7 @@ impl Compiler {
             Stmt::While(cond, body, otherwise) => {
                 let id = self.loop_id();
                 let flag = if otherwise.is_some() {
-                    Some(self.literal("Bool", "false", &cond.span)?)
+                    Some(self.literal("Bool", "false", cond.span())?)
                 } else {
                     None
                 };
@@ -892,7 +893,7 @@ impl Compiler {
                 let outer = std::mem::take(&mut self.pending_temps);
                 let mut before_body = self.scopes.clone();
                 let loop_body = self.capture(|c| {
-                    let condition = c.condition(cond)?;
+                    let (condition, bindings) = c.pattern_condition(cond)?;
                     before_body = c.scopes.clone();
                     condition_exits = c.diverged;
                     if c.diverged {
@@ -905,8 +906,11 @@ impl Compiler {
                             instructions: vec![Instruction::Break(id)],
                         },
                     });
+                    if matches!(cond, Condition::Expr(_)) {
+                        c.release_temps();
+                    }
+                    c.pattern_statement(&bindings, body, cond.span())?;
                     c.release_temps();
-                    c.statement(body)?;
                     Ok(())
                 })?;
                 let context = self.loops.pop().unwrap();
@@ -1077,7 +1081,15 @@ impl Compiler {
     fn intersect_initialization(&mut self, other: &[BTreeMap<String, Variable>]) {
         for (scope, other_scope) in self.scopes.iter_mut().zip(other) {
             for (name, variable) in scope {
-                variable.initialized &= other_scope[name].initialized;
+                variable.initialized &= other_scope.get(name).map_or_else(
+                    || {
+                        self.capture_contexts
+                            .last()
+                            .and_then(|c| c.locals.get(name))
+                            .is_some_and(|v| v.id == variable.id)
+                    },
+                    |v| v.initialized,
+                );
             }
         }
     }
@@ -1215,12 +1227,11 @@ impl Compiler {
                 Ok(result)
             }
             ExprKind::Var(n) => {
-                if (n.text == "None" || n.text.contains("::"))
-                    && self.local_variable(&n.text).is_none()
-                {
+                let variable = self.lookup_variable(n, false)?;
+                if (n.text == "None" || n.text.contains("::")) && variable.is_none() {
                     return self.call(&n.text, vec![], expected, &n.span);
                 }
-                let Some(v) = self.local_variable(&n.text) else {
+                let Some(v) = variable else {
                     return self.function_value(n);
                 };
                 if v.ty == crate::hir::DIVERGED {
@@ -1240,7 +1251,7 @@ impl Compiler {
             }
             ExprKind::Call(n, args) => {
                 if self
-                    .local_variable(&n.text)
+                    .lookup_variable(n, true)?
                     .is_some_and(|v| self.callables.contains_key(&v.ty))
                 {
                     let callee = self.expr(

@@ -297,10 +297,12 @@ impl Compiler {
         let native = self.types[&first.ty].clone();
         let result_native = self.types[&result].clone();
         let body = if name == "value" {
-            "if(x->value.index()!=0)fail(loc,\"absent Option value\");return std::get<0>(x->value).field_0;".into()
+            format!(
+                "if(rusk_enum_index<{native}>(x->value)!=0)fail(loc,\"absent Option value\");return rusk_enum_payload<{native},0>(x->value).field_0;"
+            )
         } else {
             format!(
-                "return make_obj<bool>(x->value.index(){}0);",
+                "return make_obj<bool>(rusk_enum_index<{native}>(x->value){}0);",
                 if matches!(name, "is_none" | "__not__") {
                     "!="
                 } else {
@@ -426,13 +428,29 @@ impl Compiler {
                 }
                 code += "};\n";
             }
-            code += &format!(
-                "std::variant<{}> value;\n}};\n",
-                (0..e.variants.len())
-                    .map(|i| format!("Variant{i}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
+            let nullable = if e.variants.len() == 2 {
+                e.variants
+                    .iter()
+                    .position(|(_, f)| f.len() == 1)
+                    .filter(|&i| e.variants[1 - i].1.is_empty())
+            } else {
+                None
+            };
+            if let Some(index) = nullable {
+                code += &format!(
+                    "static constexpr bool nullable=true;static constexpr std::size_t present={index},absent={};Obj<{}> value;\n}};\n",
+                    1 - index,
+                    self.types[&e.variants[index].1[0].text]
+                );
+            } else {
+                code += &format!(
+                    "static constexpr bool nullable=false;std::variant<{}> value;\n}};\n",
+                    (0..e.variants.len())
+                        .map(|i| format!("Variant{i}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
             code += &format!(
                 "Obj<{native}> deep_copy(const Obj<{native}>& value,Loc loc=Loc{{\"<copy>\",0,0}});\n"
             );
@@ -444,13 +462,13 @@ impl Compiler {
         for (ty, variants) in &self.enum_copies {
             let native = &self.types[ty];
             code += &format!(
-                "Obj<{native}> deep_copy(const Obj<{native}>& value,[[maybe_unused]] Loc loc){{auto snapshot=value->value;switch(snapshot.index()){{"
+                "Obj<{native}> deep_copy(const Obj<{native}>& value,[[maybe_unused]] Loc loc){{auto snapshot=value->value;switch(rusk_enum_index<{native}>(snapshot)){{"
             );
             for (i, fields) in variants.iter().enumerate() {
                 code += &format!("case {i}:{{");
                 for (j, f) in fields.iter().enumerate() {
                     code += &format!(
-                        "auto field_{j}={}(std::get<{i}>(snapshot).field_{j},loc);",
+                        "auto field_{j}={}(rusk_enum_payload<{native},{i}>(snapshot).field_{j},loc);",
                         self.functions[*f].cpp
                     );
                 }
@@ -463,163 +481,5 @@ impl Compiler {
             code += "default:fail(loc,\"invalid enum tag\");}}\n";
         }
         code
-    }
-}
-
-impl Compiler {
-    pub(super) fn match_expression(
-        &mut self,
-        source: &Expr,
-        arms: &[crate::ast::MatchArm],
-        expected: Option<&str>,
-        span: &Span,
-    ) -> Result<Value, String> {
-        let value = self.expr(source, None)?;
-        if self.diverged {
-            return Ok(Value::never());
-        }
-        let e = self
-            .enums
-            .get(&value.ty)
-            .cloned()
-            .ok_or_else(|| span.error("match requires an enum value"))?;
-        let mut covered = BTreeSet::new();
-        let mut indices = vec![];
-        let mut wildcard = false;
-        for arm in arms {
-            if wildcard {
-                return Err(arm.name.span.error("unreachable match arm"));
-            }
-            if arm.name.text == "_" {
-                if !arm.bindings.is_empty() {
-                    return Err(arm.name.span.error("wildcard has no payload"));
-                }
-                if covered.len() == e.variants.len() {
-                    return Err(arm.name.span.error("unreachable match arm"));
-                }
-                wildcard = true;
-                indices.push(None);
-                continue;
-            }
-            let variant = if let Some((owner, v)) = arm.name.text.rsplit_once("::") {
-                if owner != value.ty && owner != e.definition {
-                    return Err(arm.name.span.error("pattern belongs to another enum type"));
-                }
-                v
-            } else {
-                &arm.name.text
-            };
-            let index = e
-                .variants
-                .iter()
-                .position(|(n, _)| n.text == variant)
-                .ok_or_else(|| arm.name.span.error("unknown enum variant in pattern"))?;
-            if !covered.insert(index) {
-                return Err(arm.name.span.error("unreachable duplicate variant pattern"));
-            }
-            if arm.bindings.len() != e.variants[index].1.len() {
-                return Err(arm.name.span.error("enum pattern payload count mismatch"));
-            }
-            indices.push(Some(index));
-        }
-        if !wildcard && covered.len() != e.variants.len() {
-            let missing = e
-                .variants
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !covered.contains(i))
-                .map(|(_, (n, _))| n.text.clone())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(span.error(format!("non-exhaustive match; missing: {missing}")));
-        }
-        self.match_arms(&value, arms, &indices, expected, span)
-    }
-    fn match_arms(
-        &mut self,
-        value: &Value,
-        arms: &[crate::ast::MatchArm],
-        indices: &[Option<usize>],
-        expected: Option<&str>,
-        span: &Span,
-    ) -> Result<Value, String> {
-        if arms.len() == 1 {
-            return self.match_arm(value, &arms[0], indices[0], expected);
-        }
-        let condition = if let Some(index) = indices[0] {
-            self.emit(
-                "Bool",
-                Rvalue::VariantTest {
-                    owner: value.clone(),
-                    index,
-                },
-            )
-        } else {
-            self.literal("Bool", "true", span)?
-        };
-        self.conditional(
-            condition,
-            expected,
-            |c, h| c.match_arm(value, &arms[0], indices[0], h),
-            |c, h| c.match_arms(value, &arms[1..], &indices[1..], h, span),
-            span,
-        )
-    }
-    fn match_arm(
-        &mut self,
-        value: &Value,
-        arm: &crate::ast::MatchArm,
-        index: Option<usize>,
-        expected: Option<&str>,
-    ) -> Result<Value, String> {
-        // A block expression keeps bindings local and exports only the shared result.
-        // Bind payloads before the body so replacing the original enum is safe.
-        self.scopes.push(BTreeMap::new());
-        let outer = std::mem::take(&mut self.pending_temps);
-        let mut result = Value::never();
-        let slot = self.temp();
-        let body = self.capture(|c| {
-            if let Some(index) = index {
-                let fields = c.enums[&value.ty].variants[index].1.clone();
-                for (field_index, (field, binding)) in fields.iter().zip(&arm.bindings).enumerate()
-                {
-                    let item = c.emit(
-                        &field.text,
-                        Rvalue::VariantField {
-                            owner: value.clone(),
-                            variant: index,
-                            index: field_index,
-                        },
-                    );
-                    c.declare_binding(binding, item)?;
-                }
-            }
-            result = c.expr(&arm.body, expected)?;
-            if !c.diverged {
-                if let Some(expected) = expected {
-                    c.same(expected, &result.ty, &arm.name.span)?;
-                }
-                c.body.push(Instruction::Rebind {
-                    target: Place::Local(slot.clone()),
-                    value: result.clone(),
-                });
-                c.release_temps();
-            }
-            Ok(())
-        })?;
-        self.scopes.pop();
-        self.pending_temps = outer;
-        if self.diverged {
-            self.body.push(Instruction::Scope(body));
-            return Ok(Value::never());
-        }
-        result.id = slot;
-        self.body.push(Instruction::Declare {
-            result: result.clone(),
-            initial: None,
-        });
-        self.body.push(Instruction::Scope(body));
-        self.pending_temps.push(result.id.clone());
-        Ok(result)
     }
 }

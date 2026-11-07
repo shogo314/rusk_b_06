@@ -7,164 +7,81 @@ pub(super) struct Callable {
     pub function: usize,
 }
 
-fn references(expr: &Expr, bound: &BTreeSet<String>, output: &mut BTreeMap<String, bool>) {
-    match &expr.kind {
-        ExprKind::Block(statements, tail) => {
-            let mut local = bound.clone();
-            for statement in statements {
-                statement_references(statement, &mut local, output);
-            }
-            if let Some(tail) = tail {
-                references(tail, &local, output);
-            }
-        }
-        ExprKind::Match(value, arms) => {
-            references(value, bound, output);
-            for arm in arms {
-                let mut local = bound.clone();
-                for b in &arm.bindings {
-                    bind_names(b, &mut local);
-                }
-                references(&arm.body, &local, output);
-            }
-        }
-        ExprKind::If(a, b, c) => {
-            references(a, bound, output);
-            references(b, bound, output);
-            references(c, bound, output);
-        }
-        ExprKind::CompareChain(first, rest) => {
-            references(first, bound, output);
-            for (_, value, _) in rest {
-                references(value, bound, output);
-            }
-        }
-        ExprKind::Unwrap(value) => references(value, bound, output),
-        ExprKind::Coalesce(a, b) => {
-            references(a, bound, output);
-            references(b, bound, output);
-        }
-        ExprKind::Var(n) => {
-            if !bound.contains(&n.text) && !n.text.contains("::") && n.text != "None" {
-                output.insert(n.text.clone(), true);
-            }
-        }
-        ExprKind::Call(n, args) => {
-            if !bound.contains(&n.text) {
-                output.entry(n.text.clone()).or_insert(false);
-            }
-            for arg in args {
-                references(arg, bound, output);
-            }
-        }
-        ExprKind::Lambda(parameters, body) => {
-            let mut local = bound.clone();
-            local.extend(parameters.iter().map(|(name, _)| name.text.clone()));
-            references(body, &local, output);
-        }
-        ExprKind::Invoke(callee, args) => {
-            references(callee, bound, output);
-            for arg in args {
-                references(arg, bound, output);
-            }
-        }
-        ExprKind::Array(items) | ExprKind::Tuple(items) => {
-            for item in items {
-                references(item, bound, output);
-            }
-        }
-        ExprKind::Repeat(a, b)
-        | ExprKind::Range(a, b)
-        | ExprKind::Index(a, b)
-        | ExprKind::Logical(_, a, b)
-        | ExprKind::Binary(_, a, b)
-        | ExprKind::Assign(_, a, b) => {
-            references(a, bound, output);
-            references(b, bound, output);
-        }
-        ExprKind::Field(owner, _) | ExprKind::Unary(_, owner) => references(owner, bound, output),
-        ExprKind::Record(_, fields) => {
-            for (_, value) in fields {
-                references(value, bound, output);
-            }
-        }
-        ExprKind::Literal(..) => {}
-    }
-}
-
-fn bind_names(binding: &Binding, bound: &mut BTreeSet<String>) {
-    match binding {
-        Binding::Name(n) => {
-            bound.insert(n.text.clone());
-        }
-        Binding::Tuple(items, _) => {
-            for item in items {
-                bind_names(item, bound);
-            }
-        }
-    }
-}
-fn statement_references(
-    statement: &Stmt,
-    bound: &mut BTreeSet<String>,
-    output: &mut BTreeMap<String, bool>,
-) {
-    match statement {
-        Stmt::Let(binding, _, initial) => {
-            if let Some(Initializer::Shared(e) | Initializer::Copied(e)) = initial {
-                references(e, bound, output);
-            }
-            bind_names(binding, bound);
-        }
-        Stmt::Input(items) => {
-            for (name, _, args) in items {
-                for arg in args {
-                    references(arg, bound, output);
-                }
-                bound.insert(name.text.clone());
-            }
-        }
-        Stmt::Expr(e) | Stmt::Match(e) | Stmt::Return(_, Some(e)) => references(e, bound, output),
-        Stmt::Output(items) => {
-            for item in items {
-                references(item, bound, output);
-            }
-        }
-        Stmt::Block(items, tail) => {
-            let mut local = bound.clone();
-            for item in items {
-                statement_references(item, &mut local, output);
-            }
-            if let Some(tail) = tail {
-                references(tail, &local, output);
-            }
-        }
-        Stmt::If(cond, yes, no) | Stmt::While(cond, yes, no) => {
-            references(cond, bound, output);
-            statement_references(yes, &mut bound.clone(), output);
-            if let Some(no) = no {
-                statement_references(no, &mut bound.clone(), output);
-            }
-        }
-        Stmt::For(binding, source, body, otherwise) => {
-            references(source, bound, output);
-            let mut local = bound.clone();
-            bind_names(binding, &mut local);
-            statement_references(body, &mut local, output);
-            if let Some(otherwise) = otherwise {
-                statement_references(otherwise, &mut bound.clone(), output);
-            }
-        }
-        Stmt::Loop(body) | Stmt::Labeled(_, body) => {
-            statement_references(body, &mut bound.clone(), output)
-        }
-        _ => {}
-    }
+#[derive(Clone)]
+pub(super) struct CaptureContext {
+    available: BTreeMap<String, Variable>,
+    captures: Vec<(Name, Variable)>,
+    pub(super) locals: BTreeMap<String, Variable>,
+    prologue: Body,
+    ty: String,
+    span: Span,
 }
 
 impl Compiler {
     pub(super) fn local_variable(&self, name: &str) -> Option<Variable> {
         self.scopes.iter().rev().find_map(|s| s.get(name)).cloned()
+    }
+
+    pub(super) fn lookup_variable(
+        &mut self,
+        name: &Name,
+        callable_only: bool,
+    ) -> Result<Option<Variable>, String> {
+        if let Some(variable) = self.local_variable(&name.text) {
+            return Ok(Some(variable));
+        }
+        let Some(context) = self.capture_contexts.last() else {
+            return Ok(None);
+        };
+        if let Some(local) = context.locals.get(&name.text).cloned() {
+            if callable_only && !self.callables.contains_key(&local.ty) {
+                return Ok(None);
+            }
+            self.scopes[0].insert(name.text.clone(), local.clone());
+            return Ok(Some(local));
+        }
+        let Some(variable) = context.available.get(&name.text).cloned() else {
+            return Ok(None);
+        };
+        if callable_only && !self.callables.contains_key(&variable.ty) {
+            return Ok(None);
+        }
+        if !variable.initialized {
+            return Err(context.span.error(format!(
+                "captured variable '{}' used before initialization",
+                name.text
+            )));
+        }
+        let env = context.ty.clone();
+        let index = context.captures.len();
+        let value = Value {
+            id: self.temp(),
+            ty: variable.ty.clone(),
+        };
+        let context = self.capture_contexts.last_mut().unwrap();
+        context.captures.push((name.clone(), variable.clone()));
+        context.prologue.push(Instruction::Object {
+            result: value.clone(),
+            expression: Rvalue::Field {
+                owner: Value {
+                    id: ValueId::Parameter(0),
+                    ty: env,
+                },
+                index,
+            },
+        });
+        let local = Variable {
+            id: value.id,
+            ty: value.ty,
+            initialized: true,
+        };
+        self.capture_contexts
+            .last_mut()
+            .unwrap()
+            .locals
+            .insert(name.text.clone(), local.clone());
+        self.scopes[0].insert(name.text.clone(), local.clone());
+        Ok(Some(local))
     }
 
     pub(super) fn invoke(
@@ -207,26 +124,13 @@ impl Compiler {
                 return Err(name.span.error("duplicate lambda parameter"));
             }
         }
-        let mut names = BTreeMap::new();
-        references(body, &bound, &mut names);
-        let mut captures = vec![];
-        for (text, value_reference) in names {
-            if let Some(variable) = self.local_variable(&text)
-                && (value_reference || self.callables.contains_key(&variable.ty))
-            {
-                if !variable.initialized {
-                    return Err(span.error(format!(
-                        "captured variable '{text}' used before initialization"
-                    )));
-                }
-                captures.push((
-                    Name {
-                        text,
-                        span: span.clone(),
-                    },
-                    variable,
-                ));
-            }
+        let mut available = self
+            .capture_contexts
+            .last()
+            .map(|c| c.available.clone())
+            .unwrap_or_default();
+        for scope in &self.scopes {
+            available.extend(scope.clone());
         }
         let key = format!(
             "{}:{}:{}:{:?}:{:?}:{:?}",
@@ -235,9 +139,9 @@ impl Compiler {
             span.column,
             self.current_function,
             parameters.iter().map(|(_, t)| &t.text).collect::<Vec<_>>(),
-            captures
+            available
                 .iter()
-                .map(|(n, v)| (&n.text, &v.ty))
+                .map(|(n, v)| (n, &v.ty, v.initialized))
                 .collect::<Vec<_>>()
         );
         let ty = if let Some(ty) = self.lambda_types.get(&key) {
@@ -257,21 +161,17 @@ impl Compiler {
                         text: ty.clone(),
                         span: span.clone(),
                     },
-                    fields: captures
-                        .iter()
-                        .map(|(name, v)| {
-                            (
-                                name.clone(),
-                                Name {
-                                    text: v.ty.clone(),
-                                    span: span.clone(),
-                                },
-                            )
-                        })
-                        .collect(),
+                    fields: vec![],
                 },
             );
-            self.prepare_record(&ty)?;
+            self.capture_contexts.push(CaptureContext {
+                available,
+                captures: vec![],
+                locals: BTreeMap::new(),
+                prologue: Body::default(),
+                ty: ty.clone(),
+                span: span.clone(),
+            });
             let saved_body = std::mem::take(&mut self.body);
             let saved_scopes = std::mem::take(&mut self.scopes);
             let saved_temps = std::mem::take(&mut self.pending_temps);
@@ -285,19 +185,6 @@ impl Compiler {
             self.scopes = vec![BTreeMap::new()];
             self.return_type = Some("Unit".into());
             let checked = (|| {
-                for (index, (name, var)) in captures.iter().enumerate() {
-                    let captured = self.emit(
-                        &var.ty,
-                        Rvalue::Field {
-                            owner: Value {
-                                ty: ty.clone(),
-                                id: ValueId::Parameter(0),
-                            },
-                            index,
-                        },
-                    );
-                    self.declare(name, var.ty.clone(), Some(captured))?;
-                }
                 for (index, (name, ty)) in parameters.iter().enumerate() {
                     self.declare(
                         name,
@@ -310,7 +197,35 @@ impl Compiler {
                 }
                 self.expr(body, None)
             })();
-            let mut checked_body = std::mem::take(&mut self.body);
+            let mut context = self.capture_contexts.pop().unwrap();
+            // Keep the established capture/copy order independent of first use.
+            let original = context
+                .captures
+                .iter()
+                .map(|(n, _)| n.text.clone())
+                .collect::<Vec<_>>();
+            context
+                .captures
+                .sort_by(|(a, _), (b, _)| a.text.cmp(&b.text));
+            let positions = context
+                .captures
+                .iter()
+                .enumerate()
+                .map(|(i, (n, _))| (n.text.clone(), i))
+                .collect::<BTreeMap<_, _>>();
+            for instruction in &mut context.prologue.instructions {
+                if let Instruction::Object {
+                    expression: Rvalue::Field { index, .. },
+                    ..
+                } = instruction
+                {
+                    *index = positions[&original[*index]];
+                }
+            }
+            let mut checked_body = context.prologue;
+            checked_body
+                .instructions
+                .extend(std::mem::take(&mut self.body).instructions);
             let exits = self.diverged;
             let inferred = self.inferred_return.take();
             self.body = saved_body;
@@ -322,6 +237,20 @@ impl Compiler {
             self.infer_return = saved_infer;
             self.inferred_return = saved_inferred;
             let value = checked?;
+            self.records.get_mut(&ty).unwrap().fields = context
+                .captures
+                .iter()
+                .map(|(name, var)| {
+                    (
+                        name.clone(),
+                        Name {
+                            text: var.ty.clone(),
+                            span: name.span.clone(),
+                        },
+                    )
+                })
+                .collect();
+            self.prepare_record(&ty)?;
             let result = if value.is_never() {
                 inferred.clone().unwrap_or("Unit".into())
             } else {
@@ -366,15 +295,24 @@ impl Compiler {
             self.lambda_types.insert(key, ty.clone());
             ty
         };
-        Ok(self.emit(
-            &ty,
-            Rvalue::Aggregate(
-                captures
-                    .into_iter()
-                    .map(|(_, v)| Value { id: v.id, ty: v.ty })
-                    .collect(),
-            ),
-        ))
+        let fields = self.records[&ty].fields.clone();
+        let mut values = vec![];
+        for (name, _) in fields {
+            let variable = self
+                .lookup_variable(&name, false)?
+                .ok_or_else(|| name.span.error("missing captured variable"))?;
+            if !variable.initialized {
+                return Err(name.span.error(format!(
+                    "captured variable '{}' used before initialization",
+                    name.text
+                )));
+            }
+            values.push(Value {
+                id: variable.id,
+                ty: variable.ty,
+            });
+        }
+        Ok(self.emit(&ty, Rvalue::Aggregate(values)))
     }
 
     pub(super) fn function_value(&mut self, name: &Name) -> Result<Value, String> {
@@ -474,7 +412,7 @@ impl Compiler {
                 return self.invoke_arguments(field, args, span);
             }
             if self
-                .local_variable(&name.text)
+                .lookup_variable(name, true)?
                 .is_some_and(|v| self.callables.contains_key(&v.ty))
             {
                 let function = self.expr(

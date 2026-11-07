@@ -132,9 +132,34 @@ pub struct Expr {
     pub span: Span,
 }
 #[derive(Clone, Debug)]
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub span: Span,
+}
+#[derive(Clone, Debug)]
+pub enum PatternKind {
+    Named(Name, Option<Vec<Pattern>>),
+    Literal(String, String),
+    Tuple(Vec<Pattern>),
+    Record(Name, Vec<(Name, Pattern)>, bool),
+    Or(Vec<Pattern>),
+}
+#[derive(Clone, Debug)]
+pub enum Condition {
+    Expr(Expr),
+    Let(Pattern, Expr),
+}
+impl Condition {
+    pub fn span(&self) -> &Span {
+        match self {
+            Self::Expr(e) | Self::Let(_, e) => &e.span,
+        }
+    }
+}
+#[derive(Clone, Debug)]
 pub struct MatchArm {
-    pub name: Name,
-    pub bindings: Vec<Binding>,
+    pub pattern: Pattern,
+    pub guard: Option<Expr>,
     pub body: Expr,
 }
 #[derive(Clone, Debug)]
@@ -146,7 +171,7 @@ pub enum ExprKind {
     Repeat(Box<Expr>, Box<Expr>),
     Range(Box<Expr>, Box<Expr>),
     Logical(String, Box<Expr>, Box<Expr>),
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    If(Box<Condition>, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<MatchArm>),
     Coalesce(Box<Expr>, Box<Expr>),
     Unwrap(Box<Expr>),
@@ -188,8 +213,8 @@ pub enum Stmt {
     Output(Vec<Expr>),
     Block(Vec<Stmt>, Option<Box<Expr>>),
     Labeled(Name, Box<Stmt>),
-    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
-    While(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    If(Condition, Box<Stmt>, Option<Box<Stmt>>),
+    While(Condition, Box<Stmt>, Option<Box<Stmt>>),
     For(Binding, Expr, Box<Stmt>, Option<Box<Stmt>>),
     Loop(Box<Stmt>),
     Break(Span, Option<Name>),
@@ -398,7 +423,7 @@ fn simple_stmt(s: &g::SimpleStatement<'_>) -> Result<Stmt, String> {
         g::SimpleStatement::Output(x) => Stmt::Output(list(&x.output.expr_list)?),
         g::SimpleStatement::If(x) => {
             let statement = Stmt::If(
-                expr(&x.r#if.expr)?,
+                condition(&x.r#if.condition)?,
                 Box::new(block(&x.r#if.block)?),
                 x.r#if
                     .if_opt
@@ -408,7 +433,7 @@ fn simple_stmt(s: &g::SimpleStatement<'_>) -> Result<Stmt, String> {
             );
             if x.r#if.if_opt0.is_some() {
                 Stmt::Expr(Expr {
-                    span: expr(&x.r#if.expr)?.span,
+                    span: condition(&x.r#if.condition)?.span().clone(),
                     kind: ExprKind::Block(vec![statement], None),
                 })
             } else {
@@ -490,7 +515,7 @@ fn for_stmt(x: &g::For<'_>) -> Result<Stmt, String> {
 }
 fn while_stmt(x: &g::While<'_>) -> Result<Stmt, String> {
     Ok(Stmt::While(
-        expr(&x.expr)?,
+        condition(&x.condition)?,
         Box::new(block(&x.block)?),
         x.while_opt
             .as_ref()
@@ -546,7 +571,7 @@ fn block_value(statement: Stmt, span: Span) -> Expr {
                 let Stmt::If(condition, yes, Some(no)) = statements.pop().unwrap() else {
                     unreachable!()
                 };
-                let position = condition.span.clone();
+                let position = condition.span().clone();
                 tail = Some(Box::new(Expr {
                     span: position.clone(),
                     kind: ExprKind::If(
@@ -592,29 +617,19 @@ fn match_expr(m: &g::MatchExpr<'_>) -> Result<Expr, String> {
     let mut arms = vec![];
     for item in &m.match_expr_list {
         let a = &item.match_arm;
-        let p = &a.pattern;
-        let bindings = p
-            .pattern_opt
-            .as_ref()
-            .map(|p| {
-                std::iter::once(p.pattern_bindings.binding.as_ref())
-                    .chain(
-                        p.pattern_bindings
-                            .pattern_bindings_list
-                            .iter()
-                            .map(|b| b.binding.as_ref()),
-                    )
-                    .map(binding)
-                    .collect()
-            })
-            .unwrap_or_default();
         let body = match a.arm_body.as_ref() {
             g::ArmBody::BlockArmBodyOpt(x) => block_expr(&x.block)?,
             g::ArmBody::StatementExprComma(x) => statement_expr(&x.statement_expr)?,
+            g::ArmBody::IfExprComma(x) => if_expr(&x.if_expr)?,
+            g::ArmBody::MatchExprComma(x) => match_expr(&x.match_expr)?,
         };
         arms.push(MatchArm {
-            name: reference(&p.reference),
-            bindings,
+            pattern: pattern(&a.pattern)?,
+            guard: a
+                .match_arm_opt
+                .as_ref()
+                .map(|g| expr(&g.guard.expr))
+                .transpose()?,
             body,
         });
     }
@@ -627,17 +642,7 @@ fn expr(e: &g::Expr<'_>) -> Result<Expr, String> {
     match e {
         g::Expr::MatchExpr(x) => match_expr(&x.match_expr),
         g::Expr::PlainExpr(x) => plain_expr(&x.plain_expr),
-        g::Expr::IfExpr(x) => {
-            let x = &x.if_expr;
-            Ok(Expr {
-                span: Span::token(&x.r#if),
-                kind: ExprKind::If(
-                    Box::new(expr(&x.expr)?),
-                    Box::new(block_expr(&x.block)?),
-                    Box::new(block_expr(&x.block0)?),
-                ),
-            })
-        }
+        g::Expr::IfExpr(x) => if_expr(&x.if_expr),
     }
 }
 fn assignment(left: Expr, op: &g::AssignOp<'_>, right: &g::Expr<'_>) -> Result<Expr, String> {
@@ -934,24 +939,7 @@ fn non_block_primary(e: &g::NonBlockPrimary<'_>) -> Result<Expr, String> {
                 },
             }
         }
-        g::NonBlockPrimary::Literal(x) => {
-            let (ty, t) = match x.literal.as_ref() {
-                g::Literal::IntLiteral(x) => ("Int", &x.int_literal.int_literal),
-                g::Literal::StringLiteral(x) => ("Str", &x.string_literal.string_literal),
-                g::Literal::CharLiteral(x) => ("Char", &x.char_literal.char_literal),
-                g::Literal::BoolLiteral(x) => (
-                    "Bool",
-                    match x.bool_literal.as_ref() {
-                        g::BoolLiteral::True(x) => &x.r#true,
-                        g::BoolLiteral::False(x) => &x.r#false,
-                    },
-                ),
-            };
-            Expr {
-                kind: ExprKind::Literal(ty.into(), t.text().into()),
-                span: Span::token(t),
-            }
-        }
+        g::NonBlockPrimary::Literal(x) => literal_expr(&x.literal),
     })
 }
 
@@ -972,5 +960,163 @@ fn lambda(e: &g::Lambda<'_>) -> Result<Expr, String> {
     Ok(Expr {
         kind: ExprKind::Lambda(parameters, Box::new(expr(&e.expr)?)),
         span: Span::token(&e.l_paren),
+    })
+}
+
+fn literal_expr(literal: &g::Literal<'_>) -> Expr {
+    let (ty, t) = match literal {
+        g::Literal::IntLiteral(x) => ("Int", &x.int_literal.int_literal),
+        g::Literal::StringLiteral(x) => ("Str", &x.string_literal.string_literal),
+        g::Literal::CharLiteral(x) => ("Char", &x.char_literal.char_literal),
+        g::Literal::BoolLiteral(x) => (
+            "Bool",
+            match x.bool_literal.as_ref() {
+                g::BoolLiteral::True(x) => &x.r#true,
+                g::BoolLiteral::False(x) => &x.r#false,
+            },
+        ),
+    };
+    Expr {
+        kind: ExprKind::Literal(ty.into(), t.text().into()),
+        span: Span::token(t),
+    }
+}
+
+fn condition(c: &g::Condition<'_>) -> Result<Condition, String> {
+    Ok(match c {
+        g::Condition::Expr(x) => Condition::Expr(expr(&x.expr)?),
+        g::Condition::LetCondition(x) => Condition::Let(
+            pattern(&x.let_condition.pattern)?,
+            expr(&x.let_condition.expr)?,
+        ),
+    })
+}
+fn pattern(p: &g::Pattern<'_>) -> Result<Pattern, String> {
+    let first = pattern_atom(&p.pattern_atom)?;
+    if p.pattern_list0.is_empty() {
+        return Ok(first);
+    }
+    let span = first.span.clone();
+    let mut items = vec![first];
+    for x in &p.pattern_list0 {
+        items.push(pattern_atom(&x.pattern_atom)?);
+    }
+    Ok(Pattern {
+        kind: PatternKind::Or(items),
+        span,
+    })
+}
+fn pattern_list(p: &g::PatternList<'_>) -> Result<Vec<Pattern>, String> {
+    std::iter::once(p.pattern.as_ref())
+        .chain(p.pattern_list_list.iter().map(|p| p.pattern.as_ref()))
+        .map(pattern)
+        .collect()
+}
+fn pattern_atom(p: &g::PatternAtom<'_>) -> Result<Pattern, String> {
+    Ok(match p {
+        g::PatternAtom::Literal(x) => {
+            let e = literal_expr(&x.literal);
+            let ExprKind::Literal(ty, text) = e.kind else {
+                unreachable!()
+            };
+            Pattern {
+                kind: PatternKind::Literal(ty, text),
+                span: e.span,
+            }
+        }
+        g::PatternAtom::NegativePattern(x) => {
+            let t = &x.negative_pattern.int_literal.int_literal;
+            Pattern {
+                kind: PatternKind::Literal("Int".into(), format!("-{}", t.text())),
+                span: Span::token(t),
+            }
+        }
+        g::PatternAtom::ParenPattern(x) => {
+            let p = &x.paren_pattern;
+            let mut items = vec![];
+            if let Some(v) = &p.paren_pattern_opt {
+                let first = pattern(&v.pattern)?;
+                match v.paren_pattern_tail.as_ref() {
+                    g::ParenPatternTail::ParenPatternTailEmpty(_) => return Ok(first),
+                    g::ParenPatternTail::CommaPatternParenPatternTailListParenPatternTailOpt(t) => {
+                        items.push(first);
+                        items.push(pattern(&t.pattern)?);
+                        for t in &t.paren_pattern_tail_list {
+                            items.push(pattern(&t.pattern)?);
+                        }
+                    }
+                }
+            }
+            Pattern {
+                kind: PatternKind::Tuple(items),
+                span: Span::token(&p.l_paren),
+            }
+        }
+        g::PatternAtom::NamedPattern(x) => {
+            let p = &x.named_pattern;
+            let n = reference(&p.reference);
+            let span = n.span.clone();
+            let kind = match &p.named_pattern_opt {
+                None => PatternKind::Named(n, None),
+                Some(t) => match t.named_pattern_tail.as_ref() {
+                    g::NamedPatternTail::LParenNamedPatternTailOptRParen(x) => PatternKind::Named(
+                        n,
+                        Some(
+                            x.named_pattern_tail_opt
+                                .as_ref()
+                                .map(|p| pattern_list(&p.pattern_list))
+                                .transpose()?
+                                .unwrap_or_default(),
+                        ),
+                    ),
+                    g::NamedPatternTail::PatternRecord(x) => {
+                        let mut fields = vec![];
+                        let mut rest = false;
+                        if let Some(p) = &x.pattern_record.pattern_record_opt {
+                            for f in std::iter::once(p.pattern_fields.pattern_field.as_ref()).chain(
+                                p.pattern_fields
+                                    .pattern_fields_list
+                                    .iter()
+                                    .map(|f| f.pattern_field.as_ref()),
+                            ) {
+                                if rest {
+                                    return Err(
+                                        span.error(".. must be the last struct pattern field")
+                                    );
+                                }
+                                match f {
+                                    g::PatternField::DotDot(_) => rest = true,
+                                    g::PatternField::IdentifierPatternFieldOpt(x) => {
+                                        let f = name(&x.identifier);
+                                        let value = if let Some(p) = &x.pattern_field_opt {
+                                            pattern(&p.pattern)?
+                                        } else {
+                                            Pattern {
+                                                kind: PatternKind::Named(f.clone(), None),
+                                                span: f.span.clone(),
+                                            }
+                                        };
+                                        fields.push((f, value));
+                                    }
+                                }
+                            }
+                        }
+                        PatternKind::Record(n, fields, rest)
+                    }
+                },
+            };
+            Pattern { kind, span }
+        }
+    })
+}
+
+fn if_expr(x: &g::IfExpr<'_>) -> Result<Expr, String> {
+    Ok(Expr {
+        span: Span::token(&x.r#if),
+        kind: ExprKind::If(
+            Box::new(condition(&x.condition)?),
+            Box::new(block_expr(&x.block)?),
+            Box::new(block_expr(&x.block0)?),
+        ),
     })
 }

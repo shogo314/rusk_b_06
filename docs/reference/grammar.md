@@ -251,3 +251,20 @@ reference = identifier [ "::" type_arguments ] { "::" identifier } ;
 ```
 
 `match_expression` は式の先頭に使えます。型検査ではenumと網羅的なarmを要求します。`_` は全variantに一致し、payloadの束縛には変数・`_`・タプル分解を使えます。説明と完全なプログラム例は[enumとmatch](enums.md)を参照してください。
+
+## β06のパターンと条件
+
+```ebnf
+condition = expression | "let" pattern "=" expression ;
+pattern = pattern_atom { "|" pattern_atom } ;
+pattern_atom = reference [ "(" [ pattern_list ] ")" | struct_pattern_fields ]
+             | literal | "-" integer_literal
+             | "(" [ pattern [ "," pattern { "," pattern } [ "," ] ] ] ")" ;
+pattern_list = pattern { "," pattern } [ "," ] ;
+struct_pattern_fields = "{" [ pattern_field { "," pattern_field } [ "," ] ] "}" ;
+pattern_field = identifier [ ":" pattern ] | ".." ;
+match_arm = pattern [ "if" expression ] "=>"
+            (block [ "," ] | expression ",") ;
+```
+
+if文・if式・while文は従来の式条件に加え、`let pattern = expression`を条件にできます。`..`は構造体パターンの最後にのみ使えます。単独の`()`はUnit、単独パターンの括弧はグループです。通常のlet・引数・forの束縛文法は拡張しません。詳しいスコープ、評価順、ガード、網羅性は[β06のパターン分岐](beta06.md)を参照してください。上の拡張規則が既出のパターン・条件の規則に優先します。

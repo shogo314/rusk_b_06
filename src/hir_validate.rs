@@ -200,6 +200,7 @@ impl Check<'_> {
                         return Err("invalid IR loop target".into());
                     }
                 }
+                Instruction::Unreachable => {}
                 Instruction::Return(value) => {
                     if let Some(value) = value {
                         self.value(value)?;

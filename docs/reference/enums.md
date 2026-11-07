@@ -93,6 +93,6 @@ wt match value { Some(n) => n, None => 0, };
 
 `??`・`?!`・`value`・`is_some`・`is_none`・真偽値変換はOption向けに残しています。`Dict.get`・`Set.get`・`Vec.find`・`try_read` が返すOptionも同じenum表現です。[OptionのAPI](beta05.md)を参照してください。
 
-## 現時点の範囲
+## パターンの拡張と制限
 
-パターンは、最上位のvariant、payload内の変数・`_`・タプル分解、最上位の `_` に対応します。ネストしたenumパターンは内側の値にもう一度matchして書きます。整数・文字列の定数パターン、orパターン、ガード、名前付きpayload、enumの再帰型、`if let` は未対応です。再帰型は構造体・コンテナを経由するものもエラーにします。
+β06では、入れ子のenum・定数・構造体・タプル・orパターン・ガードと、if let・while letに対応します。[パターン分岐の仕様](beta06.md)を参照してください。再帰型は引き続き未対応です。

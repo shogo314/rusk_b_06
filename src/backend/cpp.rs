@@ -115,13 +115,19 @@ pub(crate) fn emit(
                                 .join(",")
                         ),
                         Rvalue::VariantTest { owner, index } => {
-                            format!("make_obj<bool>({}->value.index()=={index})", owner.id)
+                            format!(
+                                "make_obj<bool>(rusk_enum_index<{}>({}->value)=={index})",
+                                types[&owner.ty], owner.id
+                            )
                         }
                         Rvalue::VariantField {
                             owner,
                             variant,
                             index,
-                        } => format!("std::get<{variant}>({}->value).field_{index}", owner.id),
+                        } => format!(
+                            "rusk_enum_payload<{}, {variant}>({}->value).field_{index}",
+                            types[&owner.ty], owner.id
+                        ),
                     };
                     out += &format!("{}{}={rhs};\n", declaration(result), result.id);
                 }

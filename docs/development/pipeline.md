@@ -132,3 +132,5 @@ python3 tools/benchmark.py --compiler target/release/rusk \
 ブロック式とラベル追加後の通常版231件・最適化無効版117件・サニタイザー13例の検証は[ブロック式とラベルの仕様](../reference/blocks-labels.md)と設計ノートに追記しています。上の222/108件と測定JSONはIR移行時点の記録です。
 
 汎用enumはHIRの`Variant`・`VariantTest`・`VariantField`で構築・判定・取り出しを表す。matchは網羅性・型・束縛スコープを検査したうえで構造化分岐へ下げ、LIRでジャンプになる。Optionも同じ型記述と命令を使い、専用のOption型や取得命令は持たない。C++バックエンドではpayload構造体の`std::variant`を共有オブジェクト内に格納する。
+
+β06では[パターン分岐の型検査と網羅性、参照解決時の捕捉、enumの共通レイアウト最適化](beta06.md)を追加しています。HIRのenum命令は共通のままです。

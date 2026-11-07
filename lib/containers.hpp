@@ -3,10 +3,32 @@
 #include <functional>
 #include <chrono>
 #include <variant>
-template<class E,std::size_t I,class... A>
-Obj<E> rusk_enum_make(A&&... args){
-    using V=std::variant_alternative_t<I,decltype(E::value)>;
-    return make_obj<E>(E{decltype(E::value){std::in_place_index<I>,V{std::forward<A>(args)...}}});
+// Empty-or-one-shared-value enums use the null pointer as their empty tag.
+// This is a layout optimization for any enum of that shape, including Option.
+template<class E,class S> std::size_t rusk_enum_index(const S& value){
+    if constexpr(E::nullable) return value ? E::present : E::absent;
+    else return value.index();
+}
+template<class S> struct RuskEnumPayloadView { S& field_0; };
+template<class E,std::size_t I,class S> decltype(auto) rusk_enum_payload(S& value){
+    if constexpr(E::nullable){
+        static_assert(I==E::present);
+        return RuskEnumPayloadView<S>{value};
+    }else return (std::get<I>(value));
+}
+template<class E,std::size_t I,class... A> Obj<E> rusk_enum_make(A&&... args){
+    if constexpr(E::nullable){
+        if constexpr(I==E::present){
+            static_assert(sizeof...(A)==1);
+            return make_obj<E>(E{std::forward<A>(args)...});
+        }else{
+            static_assert(I==E::absent && sizeof...(A)==0);
+            return make_obj<E>(E{});
+        }
+    }else{
+        using V=std::variant_alternative_t<I,decltype(E::value)>;
+        return make_obj<E>(E{decltype(E::value){std::in_place_index<I>,V{std::forward<A>(args)...}}});
+    }
 }
 template<class T> std::size_t rusk_hash_value(const Obj<T>& x) { return std::hash<T>{}(*x); }
 inline void rusk_hash_combine(std::size_t& hash,std::size_t part) {hash^=part+std::size_t(0x9e3779b9)+(hash<<6)+(hash>>2);}
