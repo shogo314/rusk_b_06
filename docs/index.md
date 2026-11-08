@@ -1,36 +1,45 @@
-# Rusk β 06
+# Rusk β06
 
-Rusk は競技プログラミング向けの言語です。作者自身にとっての書きやすさと、競技プログラミングで十分な実行速度を重視して開発しています。
+Ruskは、競技プログラミング向けに開発している言語です。RuskのソースをC++20へ変換し、生成したC++をコンパイルして実行・提出します。このサイトは**β06の実装済みの言語と標準ライブラリ**を説明します。将来の設計案とは区別しています。
 
-このドキュメントは第6段階の `rusk_b_06` を対象とします。完成した [rusk_b_05](https://github.com/shogo314/rusk_b_05) の実装・設計・テストを引き継いでいます。β05ではenumとmatch、if式、Optionと不在演算子、比較の連鎖、辞書・集合、構造化入力を追加しています。
+```rusk
+in n: Int;
+in a(n): Vec<Int>;
+let best := 0;
+for x in a { best >?= x; }
+wt a.sum(), best;
+```
 
-!!! note "開発状況"
-    C++20 を生成するプロトタイプです。基本型の入出力、整数演算、共有・コピー・代入、短絡論理演算、条件分岐、while / for、再帰とオーバーロードが使えます。多次元配列、ソート・二分探索、ASCII 文字列操作にも対応します。構造体、タプルと分解、型引数付きの関数・構造体、`include` によるライブラリ分割も使えます。β03で実装したバッファ入出力と基本値の一時結果の確保削減にも対応しています。高度なジェネリクスやさらなる最適化は今後の課題です。
+入力が `4` と `3 1 4 2` なら、出力は `10 4` です。トップレベルに実行文を書き、`main`関数は定義しません。
 
-β06では[パターン分岐・ガード・if let](reference/beta06.md)を追加しています。β05の機能も引き継いでいます。
+## 最初に読むページ
 
-## ドキュメントを読む
+1. [導入と実行](getting-started/index.md)：必要な環境、ビルド、C++への変換。
+2. [小さなプログラムで学ぶ](getting-started/tutorial.md)：入力、配列、共有、関数、Option。
+3. [基本構文と共有](reference/index.md)：`=`と`:=`、評価順、添字、スコープ。
+4. [標準ライブラリ](library/index.md)：操作を目的から探す。
 
-- [はじめに](getting-started/index.md)：導入と最初のプログラム。
-- [言語リファレンス](reference/index.md)：構文と振る舞い。
-- [文法一覧（EBNF）](reference/grammar.md)：字句、全構文、演算子の優先順位。
-- [型・共有・評価の規則](reference/semantics.md)：型推論、代入、スコープ、関数選択。
-- [エラーと制限](reference/errors.md)：診断の読み方と修正方法。
-- [β02の型とライブラリ分割](reference/beta02.md)：構造体、タプル、型引数、自作ライブラリ。
-- [ブロック式とラベル付きループ](reference/blocks-labels.md)：複数文を持つ式、外側への脱出と共有の寿命。
-- [enumとmatch](reference/enums.md)：型引数、variant、網羅的な分岐、共有とコピー。
-- [分岐式・Option・比較の連鎖](reference/beta05.md)：評価順、短絡、不在時のエラー。
-- [辞書・集合と不在を返す操作](library/beta05.md)：API、キー保護、走査、EOFと構造化入力。
-- [β04の関数と捕捉](reference/beta04.md)：無名関数、静的な受け渡し、捕捉環境のコピー。
-- [関数を使う操作とデータ構造](library/beta04.md)：遅延走査・集計・探索・ソート・優先度キュー・セグメント木。
-- [標準ライブラリ](library/index.md)：型・関数の使い方と計算量。
-- [Ruskで記述したデータ構造](library/data-structures.md)：Union-Find、Fenwick Tree、セグメント木のAPI。
-- [β03の高速化と検証](development/beta03.md)：バッファ入出力、確保削減、β02との速度比較。
-- [β05の実装と検証](development/beta05.md)：条件分岐・コンテナの変換方式と回帰検証。
-- [開発ガイド](development/index.md)：実装とドキュメントの更新。
+## 書き方を調べる
 
-## 設計の背景
+| 調べたいこと | ページ |
+|---|---|
+| 構文・演算子の優先順位 | [文法一覧](reference/grammar.md) |
+| コピーと共有、代入、型検査 | [型・共有・評価](reference/semantics.md) |
+| if式、ループ、ラベル、ブロック | [制御構文](reference/control-flow.md) |
+| 関数、型引数、クロージャ | [関数](reference/functions.md) |
+| 構造体、タプル、ファイル分割 | [型とinclude](reference/beta02.md) |
+| enum、Option、パターン分岐 | [enum](reference/enums.md)、[パターンとガード](reference/beta06.md) |
+| 最小・最大値の選択と更新 | [最小・最大演算子](reference/minmax.md) |
+| 入力形式、EOF、出力 | [入出力](library/input-output.md) |
+| 配列・文字列のAPIと共有 | [配列と文字列](library/sequences.md) |
+| 対応範囲と制限 | [対応機能](reference/status.md)、[エラー](reference/errors.md) |
 
-思想や設計理由、検討中の案は、リポジトリの [設計ノート](https://github.com/shogo314/rusk_b_06/tree/main/design) に記録しています。設計ノートには未実装の機能や未確定の構文も含まれます。
+## Ruskの共有
 
-利用者向けの説明は実装済みの機能を基本とし、設計案との違いが分かるように整備します。
+`let b := a;` は同じオブジェクトを共有し、`let b = a;` はコピーします。既存変数に対する `a = value` は共有中の中身を更新し、`a := value` はその変数の共有先を変更します。基本型の整数にもこの規則が適用されます。
+
+## 実装と検証
+
+[変換パイプライン](development/pipeline.md)では、CST・AST・型付けしたHIR・制御フローを表すLIRからC++生成までを説明します。[テストの実行](development/verification.md)ではローカルとCIの確認方法を扱います。版ごとの変更・性能測定は開発ガイドにまとめています。
+
+このサイトのコードブロックには、単独で実行するプログラムと、説明用の構文断片があります。入力・出力を添えた例は、それらの値で動作を確認できるようにしています。

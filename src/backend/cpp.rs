@@ -164,7 +164,7 @@ pub(crate) fn emit(
                             .iter()
                             .map(|v| v.id.to_string())
                             .collect::<Vec<_>>();
-                        args.push(location(&call.span));
+                        args.push(call_location(call));
                         format!("{}({})", info.cpp, args.join(","))
                     };
                     if call.result.ty == "Unit" {
@@ -248,4 +248,12 @@ pub(super) fn quoted(s: &str) -> String {
 }
 pub(super) fn location(s: &crate::ast::Span) -> String {
     format!("Loc{{{}, {}, {}}}", quoted(&s.file), s.line, s.column)
+}
+
+pub(super) fn call_location(call: &crate::hir::Call) -> String {
+    if call.inherit_location {
+        "rusk_call_loc".into()
+    } else {
+        location(&call.span)
+    }
 }

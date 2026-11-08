@@ -1,6 +1,6 @@
 # 文法一覧
 
-このページはβ05のパーサーが受け付ける文法を説明します。ブロック式、ラベル付きループ、if式、Optionの演算子、比較の連鎖にも対応します。演算子の優先順位と結合はAST構築時に確定します。構文上書けることと、型検査を通ることは別です。例えばブロック内の関数定義は文法上は解析できますが、意味の検査でトップレベル以外の定義を拒否します。実装の原本はリポジトリの `rusk.par` です。
+このページはβ06のパーサーが受け付ける文法を説明します。ブロック式、ラベル付きループ、if式、Optionの演算子、比較の連鎖にも対応します。演算子の優先順位と結合はAST構築時に確定します。構文上書けることと、型検査を通ることは別です。例えばブロック内の関数定義は文法上は解析できますが、意味の検査でトップレベル以外の定義を拒否します。実装の原本はリポジトリの `rusk.par` です。
 
 ## 表記と字句
 
@@ -124,9 +124,9 @@ wt;                            // 改行のみ
 ## 制御構文
 
 ```ebnf
-if_statement    = "if" expression block [ "else" block ] [ ";" ] ;
+if_statement    = "if" condition block [ "else" block ] [ ";" ] ;
 for_statement   = "for" binding "in" expression block [ "else" block ] ;
-while_statement = "while" expression block [ "else" block ] ;
+while_statement = "while" condition block [ "else" block ] ;
 loop_statement  = "loop" block ;
 ```
 
@@ -144,22 +144,23 @@ loop_statement  = "loop" block ;
 | 2 | 単項 `+`、`-`、`!` | 右結合 |
 | 3 | `*`、`/`、`%` | 左結合 |
 | 4 | `+`、`-` | 左結合 |
-| 5 | `==`、`!=`、`<`、`<=`、`>`、`>=` | 短絡する比較の連鎖 |
-| 6 | `&` | 左結合 |
-| 7 | `^` | 左結合 |
-| 8 | `\|` | 左結合 |
-| 9 | `&&` | 左結合・短絡評価 |
-| 10 | `\|\|` | 左結合・短絡評価 |
-| 11 | `..` | 1回だけ |
-| 12 | `??` | 右結合・不在時だけ右辺を評価 |
-| 13 | `:=`、`=`、`+=`、`-=`、`*=`、`/=`、`%=` | 右結合 |
+| 5 | `<?`、`>?` | 左結合・最小値／最大値 |
+| 6 | `==`、`!=`、`<`、`<=`、`>`、`>=` | 短絡する比較の連鎖 |
+| 7 | `&` | 左結合 |
+| 8 | `^` | 左結合 |
+| 9 | `\|` | 左結合 |
+| 10 | `&&` | 左結合・短絡評価 |
+| 11 | `\|\|` | 左結合・短絡評価 |
+| 12 | `..` | 1回だけ |
+| 13 | `??` | 右結合・不在時だけ右辺を評価 |
+| 14 | `:=`、`=`、`+=`、`-=`、`*=`、`/=`、`%=`、`<?=`、`>?=` | 右結合 |
 
 比較はビット演算より強いため、ビットを調べるときは `(mask & bit) != 0` と括弧を付けます。`0 <= x < n` は各隣接項を比較し、偽になった時点で評価を止めます。シフト・ビット反転・ビット複合代入・`++`・`--`・三項演算子は未実装です。
 
 ```ebnf
-expression = if_expression | plain_expression ;
+expression = if_expression | match_expression | plain_expression ;
 plain_expression = lambda | coalesce [ assignment_operator expression ] ;
-if_expression = "if" expression block "else" block ;
+if_expression = "if" condition block "else" block ;
 coalesce   = range [ "??" coalesce ] ;
 lambda     = "(" parameters ")" "=>" expression ;
 range      = logical_or [ ".." logical_or ] ;
@@ -168,13 +169,14 @@ logical_and = bit_or { "&&" bit_or } ;
 bit_or     = bit_xor { "|" bit_xor } ;
 bit_xor    = bit_and { "^" bit_and } ;
 bit_and    = comparison { "&" comparison } ;
-comparison = addition { comparison_operator addition } ;
+comparison = extreme { comparison_operator extreme } ;
+extreme    = addition { ("<?" | ">?") addition } ;
 addition   = multiplication { ("+" | "-") multiplication } ;
 multiplication = unary { ("*" | "/" | "%") unary } ;
 unary      = ("+" | "-" | "!") unary | postfix ;
 postfix    = primary { "[" expression "]"
                     | "." identifier | "(" expression_list ")" | "?!" } ;
-assignment_operator = ":=" | "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
+assignment_operator = ":=" | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<?=" | ">?=" ;
 comparison_operator = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 ```
 
@@ -184,7 +186,7 @@ comparison_operator = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 primary    = block | array | literal
            | reference [ record_fields ]
            | "(" expression [ tuple_tail ] ")" ;
-reference  = identifier [ "::" type_arguments ] ;
+reference  = identifier [ "::" type_arguments ] { "::" identifier } ;
 array      = "[" [ expression ( ";" expression | { "," expression } ) ] "]" ;
 tuple_tail = "," expression { "," expression } [ "," ] ;
 record_fields = "{" field_value { "," field_value } [ "," ] "}" ;
@@ -245,14 +247,11 @@ enum_definition = "enum" identifier [ type_parameters ] "{" [ variants ] "}" ;
 variants = variant { "," variant } [ "," ] ;
 variant = identifier [ "(" type { "," type } ")" ] ;
 match_expression = "match" expression "{" { match_arm } "}" ;
-match_arm = pattern "=>" (block [ "," ] | plain_expression ",") ;
-pattern = reference [ "(" binding { "," binding } ")" ] ;
-reference = identifier [ "::" type_arguments ] { "::" identifier } ;
 ```
 
-`match_expression` は式の先頭に使えます。型検査ではenumと網羅的なarmを要求します。`_` は全variantに一致し、payloadの束縛には変数・`_`・タプル分解を使えます。説明と完全なプログラム例は[enumとmatch](enums.md)を参照してください。
+variantを持つenumを定義し、`match`で分岐します。matchの対象はenumだけに限らず、基本型・タプル・構造体も使えます。文として使う場合にも網羅性が必要です。[enumとmatch](enums.md)に構築と共有の例があります。
 
-## β06のパターンと条件
+## パターン・ガード・条件
 
 ```ebnf
 condition = expression | "let" pattern "=" expression ;
@@ -267,4 +266,8 @@ match_arm = pattern [ "if" expression ] "=>"
             (block [ "," ] | expression ",") ;
 ```
 
-if文・if式・while文は従来の式条件に加え、`let pattern = expression`を条件にできます。`..`は構造体パターンの最後にのみ使えます。単独の`()`はUnit、単独パターンの括弧はグループです。通常のlet・引数・forの束縛文法は拡張しません。詳しいスコープ、評価順、ガード、網羅性は[β06のパターン分岐](beta06.md)を参照してください。上の拡張規則が既出のパターン・条件の規則に優先します。
+if文・if式・while文は従来の式条件に加え、`let pattern = expression`を条件にできます。`..`は構造体パターンの最後にのみ使えます。単独の`()`はUnit、単独パターンの括弧はグループです。通常のlet・引数・forの束縛文法は拡張しません。詳しいスコープ、評価順、ガード、網羅性は[β06のパターン分岐](beta06.md)を参照してください。
+
+最小・最大演算子`<?`・`>?`と更新`<?=`・`>?=`のコピー・共有・評価順は[専用ページ](minmax.md)を参照してください。
+
+`+=`や`<?=`などの複合代入は一つの演算子です。途中に空白を入れて`+ =`や`<? =`とは書けません。演算子の前後の空白は自由です。

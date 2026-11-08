@@ -8,23 +8,38 @@ strict: true
 theme:
   name: material
   language: ja
+  features:
+    - navigation.sections
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - toc.follow
 nav:
   - ホーム: index.md
-  - はじめに: getting-started/index.md
+  - はじめに:
+      - 導入と実行: getting-started/index.md
+      - 小さなプログラムで学ぶ: getting-started/tutorial.md
+      - コマンドライン: getting-started/cli.md
   - 言語リファレンス:
       - 基本構文と共有: reference/index.md
+      - 制御構文: reference/control-flow.md
+      - 関数: reference/functions.md
+      - 対応機能と制限: reference/status.md
       - 文法一覧（EBNF）: reference/grammar.md
       - 型・共有・評価の規則: reference/semantics.md
-      - β02の型とライブラリ分割: reference/beta02.md
+      - 構造体・タプル・型引数・include: reference/beta02.md
       - ブロック式とラベル付きループ: reference/blocks-labels.md
+      - 最小・最大演算子: reference/minmax.md
       - パターン分岐・ガード・if let: reference/beta06.md
       - enumとmatch: reference/enums.md
       - 分岐式・Option・比較の連鎖: reference/beta05.md
-      - β04の関数と捕捉: reference/beta04.md
+      - 関数の受け渡しと捕捉: reference/beta04.md
       - エラーと制限: reference/errors.md
   - ライブラリ:
-      - 辞書・集合と不在を返す操作: library/beta05.md
       - 標準ライブラリ: library/index.md
+      - 入出力: library/input-output.md
+      - 配列と文字列: library/sequences.md
+      - 辞書・集合と不在を返す操作: library/beta05.md
       - Ruskで記述したデータ構造: library/data-structures.md
       - 関数を使う操作とデータ構造: library/beta04.md
   - 開発ガイド:

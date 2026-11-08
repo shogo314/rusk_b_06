@@ -9,6 +9,13 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = [
+    ((ROOT/'examples/beta06/minmax.rusk').read_text(),b'',b'10 10 6\n11\n11 99\n'),
+    ('''let text:="abc";let independent:=text[0]<?'z';
+text.push_back('!');independent='Q';text[0]<?='A';wt text,independent;
+let values:=[[8]];let old:=values[0][0];
+fn replace(values:Vec<Vec<Int>>)->Int{values[0]:=[99];return 1;}
+values[0][0]<?=replace(values);wt old,values;
+''',b'',b'Abc! Q\n1 99\n'),
     ((ROOT/'examples/beta06/patterns.rusk').read_text(),b'',b'6\n2 3\n1\n3\ndone\n'),
     ('''struct Row{x:Int;}
 let e:=Some([1]);let held:Vec<Int>:=[];

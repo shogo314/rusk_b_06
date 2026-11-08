@@ -21,6 +21,8 @@ pub(crate) struct Call {
     pub function: FunctionId,
     pub args: Vec<Value>,
     pub span: Span,
+    /// Standard-library wrappers report failures at their caller.
+    pub inherit_location: bool,
     pub result: Value,
 }
 #[derive(Clone, Debug)]

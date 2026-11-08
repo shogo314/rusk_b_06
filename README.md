@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-β06では[パターン分岐・ガード・if let](docs/reference/beta06.md)を追加しています。入れ子のenum、タプル・構造体、定数、orパターン、matchガード、文と式のif let、while letに対応します。[β06の要件](design/beta06.md)を参照してください。
+β06では[パターン分岐・ガード・if let](docs/reference/beta06.md)を追加しています。入れ子のenum、タプル・構造体、定数、orパターン、matchガード、文と式のif let、while letに対応します。[最小・最大演算子](docs/reference/minmax.md)にも対応します。[β06の要件](design/beta06.md)を参照してください。
 
 β05では、[enumとmatch](docs/reference/enums.md)、if式、`Option<T>` と `??`・`?!`、比較の連鎖、ハッシュ型の辞書・集合、多次元配列とタプルの一括入力を追加しています。[要件](design/beta05.md)、[分岐と不在の仕様](docs/reference/beta05.md)、[辞書・集合と入力API](docs/library/beta05.md)、[実装・検証・性能測定](docs/development/beta05.md)を参照してください。
 

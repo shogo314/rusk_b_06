@@ -54,3 +54,5 @@ oj-verify run examples/aoj/dpl_1_d.test.rusk
 | [ITP1_3_C](https://onlinejudge.u-aizu.ac.jp/problems/ITP1_3_C) | try_read・ブロック式・ラベル付きbreak・タプルのif式 | [itp1_3_c_option.test.rusk](itp1_3_c_option.test.rusk) |
 
 β06では[ITP1_3_Cのパターン分岐版](itp1_3_c_patterns.test.rusk)と、[ITP1_8_B](https://onlinejudge.u-aizu.ac.jp/problems/ITP1_8_B)の[解答](itp1_8_b.test.rusk)を追加しました。while let・タプル/文字列パターン・ガードを公開ケースで検証します。
+
+[DPL_1_A](dpl_1_a.test.rusk)のDP更新は`<?=`、[ALDS1_1_D](alds1_1_d.test.rusk)の走査は`<?=`・`>?=`を使います。

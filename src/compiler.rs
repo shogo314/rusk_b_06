@@ -621,6 +621,9 @@ impl Compiler {
             function: i,
             args,
             span: s.clone(),
+            inherit_location: self
+                .current_function
+                .is_some_and(|i| self.functions[i].name.span.file == "<stdlib/core.rusk>"),
             result: result.clone(),
         }));
         Ok(result)
@@ -1394,7 +1397,7 @@ impl Compiler {
                 if op == "=" {
                     self.call("__assign__", vec![target.clone(), rhs], None, &e.span)?;
                 } else {
-                    let binary = &op[..1];
+                    let binary = op.strip_suffix('=').expect("compound assignment operator");
                     let inplace = format!("__i{}", &binary_name(binary)[2..]);
                     if self
                         .resolve(&inplace, &[target.clone(), rhs.clone()], None, &e.span)?
@@ -1418,6 +1421,8 @@ impl Compiler {
 }
 fn binary_name(op: &str) -> &str {
     match op {
+        "<?" => "__min__",
+        ">?" => "__max__",
         "&" => "__bitand__",
         "|" => "__bitor__",
         "^" => "__bitxor__",

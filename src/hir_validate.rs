@@ -6,6 +6,7 @@ struct Check<'a> {
     values: BTreeMap<ValueId, String>,
     loops: BTreeSet<LoopId>,
     result: &'a str,
+    caller_location: bool,
 }
 impl Check<'_> {
     fn ty(&self, ty: &str) -> Result<(), String> {
@@ -134,6 +135,9 @@ impl Check<'_> {
                     self.define(result)?;
                 }
                 Instruction::Call(call) => {
+                    if call.inherit_location && !self.caller_location {
+                        return Err("caller location is not available in main".into());
+                    }
                     let function = self
                         .program
                         .functions
@@ -221,6 +225,7 @@ impl Program {
             values: BTreeMap::new(),
             loops: BTreeSet::new(),
             result: "Unit",
+            caller_location: false,
         };
         for ty in self.types.values() {
             match ty {
@@ -273,6 +278,7 @@ impl Program {
                     values: BTreeMap::new(),
                     loops: BTreeSet::new(),
                     result: "Unit",
+                    caller_location: true,
                 }
             };
             for (i, t) in f.params.iter().enumerate() {
@@ -327,6 +333,7 @@ mod tests {
                     },
                     Instruction::Call(Call {
                         function: 0,
+                        inherit_location: false,
                         args: vec![argument],
                         span: crate::ast::Span {
                             file: "test".into(),
@@ -350,6 +357,21 @@ mod tests {
                 .validate()
                 .unwrap_err()
                 .contains("undefined IR value")
+        );
+        program.functions[0].params = vec!["Bool".into()];
+        if let Instruction::Call(call) = &mut program.main.instructions[1] {
+            call.args[0] = Value {
+                id: ValueId::Local(0),
+                ty: "Bool".into(),
+            };
+            call.inherit_location = true;
+        }
+        assert!(program.validate().unwrap_err().contains("caller location"));
+        assert!(
+            crate::lir::lower_program(&program)
+                .validate()
+                .unwrap_err()
+                .contains("caller location")
         );
     }
 }

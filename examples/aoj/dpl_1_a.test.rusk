@@ -7,7 +7,7 @@ in coins(m):Vec<Int>;
 let counts:=[n+1;n+1]; counts[0]=0;
 for amount in 1..(n+1) {
     for coin in coins {
-        if coin<=amount { counts[amount]=min(counts[amount],counts[amount-coin]+1); }
+        if coin<=amount { counts[amount]<?=counts[amount-coin]+1; }
     }
 }
 wt counts[n];

@@ -474,3 +474,21 @@ extern fn assert(condition: Bool) {
     cpp_name: "rusk_assert",
     code: "void rusk_assert(Obj<bool> condition, Loc loc) { if (!*condition) fail(loc,\"assertion failed\"); }",
 }
+
+// Min/max operators copy the selected value; compound forms update only on improvement.
+fn __min__<T>(a:T,b:T)->T{
+    let take_right:Bool:=b<a;
+    return if take_right{copy(b)}else{copy(a)};
+}
+fn __max__<T>(a:T,b:T)->T{
+    let take_right:Bool:=a<b;
+    return if take_right{copy(b)}else{copy(a)};
+}
+fn __imin__<T>(a:T,b:T){
+    let improve:Bool:=b<a;
+    if improve{a=b;}
+}
+fn __imax__<T>(a:T,b:T){
+    let improve:Bool:=a<b;
+    if improve{a=b;}
+}

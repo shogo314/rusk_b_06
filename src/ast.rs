@@ -654,6 +654,8 @@ fn assignment(left: Expr, op: &g::AssignOp<'_>, right: &g::Expr<'_>) -> Result<E
         g::AssignOp::StarEqu(x) => ("*=", &x.star_equ),
         g::AssignOp::SlashEqu(x) => ("/=", &x.slash_equ),
         g::AssignOp::PercentEqu(x) => ("%=", &x.percent_equ),
+        g::AssignOp::LTQuestEqu(x) => ("<?=", &x.l_t_quest_equ),
+        g::AssignOp::GTQuestEqu(x) => (">?=", &x.g_t_quest_equ),
     };
     Ok(Expr {
         span: Span::token(t),
@@ -735,6 +737,8 @@ fn binary_op(op: &g::BinaryOp<'_>) -> (String, Span) {
         g::BinaryOp::LTEqu(x) => &x.l_t_equ,
         g::BinaryOp::GT(x) => &x.g_t,
         g::BinaryOp::GTEqu(x) => &x.g_t_equ,
+        g::BinaryOp::LTQuest(x) => &x.l_t_quest,
+        g::BinaryOp::GTQuest(x) => &x.g_t_quest,
         g::BinaryOp::Plus(x) => &x.plus,
         g::BinaryOp::Minus(x) => &x.minus,
         g::BinaryOp::Star(x) => &x.star,
@@ -753,8 +757,9 @@ fn precedence(op: &str) -> u8 {
         "^" => 6,
         "&" => 7,
         "==" | "!=" | "<" | "<=" | ">" | ">=" => 8,
-        "+" | "-" => 9,
-        "*" | "/" | "%" => 10,
+        "<?" | ">?" => 9,
+        "+" | "-" => 10,
+        "*" | "/" | "%" => 11,
         _ => unreachable!(),
     }
 }

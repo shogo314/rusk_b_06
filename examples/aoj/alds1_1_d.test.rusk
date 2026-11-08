@@ -6,7 +6,7 @@ in n:Int;
 in prices(n):Vec<Int>;
 let cheapest = prices[0]; let profit:=prices[1]-prices[0];
 for i in 1..n {
-    profit=max(profit,prices[i]-cheapest);
-    cheapest=min(cheapest,prices[i]);
+    profit>?=prices[i]-cheapest;
+    cheapest<?=prices[i];
 }
 wt profit;

@@ -20,7 +20,7 @@ pub(super) fn lower(call: &Call, info: &FunctionInfo) -> Option<String> {
     let ty = args.first().map(|v| v.ty.as_str()).unwrap_or_default();
     let scalar = matches!(ty, "Int" | "Bool" | "Char");
     let integers = args.len() == 2 && args.iter().all(|v| v.ty == "Int");
-    let loc = super::cpp::location(&call.span);
+    let loc = super::cpp::call_location(call);
     match info.name.as_str() {
         "__add__" | "__sub__" | "__mul__" if integers => {
             let op = match info.name.as_str() {

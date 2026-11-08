@@ -276,16 +276,17 @@ impl Program {
                 return Err(format!("invalid LIR signature for {}", f.name));
             }
             if let Some(body) = &f.body {
-                self.validate_body(body, &f.params, &f.result)?;
+                self.validate_body(body, &f.params, &f.result, true)?;
             }
         }
-        self.validate_body(&self.main, &[], "Unit")
+        self.validate_body(&self.main, &[], "Unit", false)
     }
     fn validate_body(
         &self,
         body: &Function,
         params: &[String],
         result: &str,
+        caller_location: bool,
     ) -> Result<(), String> {
         if body.blocks.is_empty() {
             return Err("LIR requires an entry block".into());
@@ -345,6 +346,9 @@ impl Program {
                     }
                     Operation::Literal { result, .. } => value(result)?,
                     Operation::Call(call) => {
+                        if call.inherit_location && !caller_location {
+                            return Err("caller location is not available in main LIR".into());
+                        }
                         value(&call.result)?;
                         let f = self
                             .functions
