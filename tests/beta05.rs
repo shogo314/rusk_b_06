@@ -317,3 +317,80 @@ wt o?!(),copied?!(),state;
         "5 1\n1 1 1\n",
     );
 }
+
+#[test]
+fn rusk_library_find_supports_nested_values_and_custom_equality() {
+    output(
+        r#"
+struct Item { key: Int; calls: Int; }
+fn __eq__(a: Item, b: Item) -> Bool { a.calls += 1; return a.key == b.key; }
+let calls := 0;
+let a := [Item { key: 3, calls: calls }, Item { key: 7, calls: calls }, Item { key: 7, calls: calls }];
+wt find(a, Item { key: 7, calls: 0 }) ?? -1, calls;
+wt find::<Int>([4, 5], 5) ?? -1;
+let nested: Vec<Vec<Int>> := [[], [1]];
+wt nested.find([]) ?? -1;
+wt ["a", "b"].find("b") ?? -1, ['a', 'b'].find('x').is_none();
+"#,
+        "",
+        "1 2\n1\n0\n1 Yes\n",
+    );
+}
+
+#[test]
+fn rusk_library_algorithms_return_independent_values() {
+    output(
+        r#"
+let a := 3; let b := 7;
+let low := min(a, b); let high := max(a, b); let positive := abs(a);
+low = 100; high = 200; positive = 300;
+let initial := 10; let total := [a, b].sum(initial); total = 0;
+wt a, b, initial, total;
+wt sum([]), sum([], 9), min(a, a), max(b, b), abs(-4), abs(0);
+"#,
+        "",
+        "3 7 10 0\n0 9 3 7 4 0\n",
+    );
+}
+
+#[test]
+fn rusk_library_failures_keep_the_user_call_location() {
+    for source in [
+        "wt 0;\nwt sum([9223372036854775807,1]);",
+        "wt 0;\nwt abs(-9223372036854775808);",
+    ] {
+        let out = Case::new(source).run("");
+        assert!(!out.status.success());
+        let message = String::from_utf8_lossy(&out.stderr);
+        assert!(message.contains("main.rusk:2:4:"), "{message}");
+        assert!(message.contains("integer overflow"), "{message}");
+    }
+}
+
+#[test]
+fn find_checks_structural_changes_even_when_comparison_matches() {
+    for matches in ["true", "false"] {
+        let source = format!(
+            r##"
+extern symbol mutation {{ code: "#include <functional>\nstd::function<void()> rusk_test_mutate;", }}
+struct Item {{ key: Int; }}
+extern fn install(a: Vec<Item>) {{
+    cpp_name: "rusk_test_install",
+    code: "void rusk_test_install(auto a, Loc) {{ rusk_test_mutate = [a] {{ a->clear(); ++a->version; }}; }}",
+}}
+extern fn mutate() {{
+    cpp_name: "rusk_test_do_mutate",
+    code: "void rusk_test_do_mutate(Loc) {{ auto f = std::move(rusk_test_mutate); f(); }}",
+}}
+fn __eq__(a: Item, b: Item) -> Bool {{ mutate(); return {matches}; }}
+let a := [Item {{ key: 1 }}]; install(a);
+wt a.find(Item {{ key: 1 }}) ?? -1;
+"##
+        );
+        let out = Case::new(&source).run("");
+        assert!(!out.status.success());
+        let message = String::from_utf8_lossy(&out.stderr);
+        assert!(message.contains("container changed"), "{message}");
+        assert!(!message.contains("<stdlib/"), "{message}");
+    }
+}

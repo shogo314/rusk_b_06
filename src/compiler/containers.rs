@@ -31,9 +31,6 @@ impl Compiler {
             };
         }
         let first = values.first()?;
-        if name == "find" && values.len() == 1 {
-            return vector_element(&first.ty).map(str::to_string);
-        }
         let c = self.containers.get(&first.ty)?;
         if matches!(c.shape, Shape::Dict | Shape::Set) {
             if values.len() == 1
@@ -318,27 +315,6 @@ impl Compiler {
             && let Some(ty) = expected
         {
             return self.read_function(ty, args.len(), span).map(Some);
-        }
-        if name == "find"
-            && args.len() == 2
-            && let Some(element) = vector_element(&args[0].ty).map(str::to_string)
-        {
-            self.same(&element, &args[1].ty, span)?;
-            let eq = self
-                .resolve("__eq__", &[args[1].clone(), args[1].clone()], None, span)?
-                .ok_or_else(|| span.error("find requires equality for its element type"))?;
-            self.same("Bool", &self.functions[eq].result, span)?;
-            self.used.insert(eq);
-            let eq = self.functions[eq].cpp.clone();
-            let result = "Option<Int>";
-            self.check_type(&Name {
-                text: result.into(),
-                span: span.clone(),
-            })?;
-            let source = self.types[&args[0].ty].clone();
-            let value = self.types[&element].clone();
-            let native = self.types[result].clone();
-            return self.cached_native(name,vec![args[0].ty.clone(),element],result,|cpp|format!("Obj<{native}> {cpp}(Obj<{source}> source,Obj<{value}> value,Loc loc){{auto version=source->version;for(std::size_t i=0,n=source->size();i<n;++i){{auto current=(*source)[i];bool match=*{eq}(current,value,loc);if(version!=source->version)fail(loc,\"container changed during callback\");if(match)return rusk_enum_make<{native},0>(make_obj<std::int64_t>(checked_int(i,loc)));}}return rusk_enum_make<{native},1>();}}"),span).map(Some);
         }
         let Some(first) = args.first() else {
             return Ok(None);

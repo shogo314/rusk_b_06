@@ -9,6 +9,12 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = [
+    ('''struct Key{ch:Char;}
+fn __eq__(a:Key,b:Key)->Bool{return a.ch==b.ch;}
+let text:="abc";let values:=[Key{ch:text[0]},Key{ch:text[1]}];
+let index:=values.find(Key{ch:'b'})?!;values=[];text.push_back('!');
+wt index,text;wt min(3,4),max(3,4),abs(-3);
+''',b'',b'1 abc!\n3 4 3\n'),
     ((ROOT/'examples/beta06/minmax.rusk').read_text(),b'',b'10 10 6\n11\n11 99\n'),
     ('''let text:="abc";let independent:=text[0]<?'z';
 text.push_back('!');independent='Q';text[0]<?='A';wt text,independent;

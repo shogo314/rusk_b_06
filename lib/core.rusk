@@ -410,17 +410,14 @@ extern fn __sub__(a: Char, b: Char) -> Int {
     cpp_name: "basic_function_33",
     code: "Obj<std::int64_t> basic_function_33(Obj<char> a, Obj<char> b, [[maybe_unused]] Loc loc) { return make_obj<std::int64_t>(static_cast<std::int64_t>(*a)-*b); }",
 }
-extern fn min(a: Int, b: Int) -> Int {
-    cpp_name: "basic_function_34",
-    code: "Obj<std::int64_t> basic_function_34(Obj<std::int64_t> a, Obj<std::int64_t> b, [[maybe_unused]] Loc loc) { return make_obj<std::int64_t>(std::min(*a,*b)); }",
+fn min(a: Int, b: Int) -> Int {
+    return if b < a { copy(b) } else { copy(a) };
 }
-extern fn max(a: Int, b: Int) -> Int {
-    cpp_name: "basic_function_35",
-    code: "Obj<std::int64_t> basic_function_35(Obj<std::int64_t> a, Obj<std::int64_t> b, [[maybe_unused]] Loc loc) { return make_obj<std::int64_t>(std::max(*a,*b)); }",
+fn max(a: Int, b: Int) -> Int {
+    return if a < b { copy(b) } else { copy(a) };
 }
-extern fn abs(x: Int) -> Int {
-    cpp_name: "basic_function_36",
-    code: "Obj<std::int64_t> basic_function_36(Obj<std::int64_t> x, [[maybe_unused]] Loc loc) { return make_obj<std::int64_t>(checked_int(*x<0 ? -static_cast<__int128>(*x) : static_cast<__int128>(*x),loc)); }",
+fn abs(x: Int) -> Int {
+    return if x < 0 { -x } else { copy(x) };
 }
 extern fn Int() -> Int {
     cpp_name: "convenience_0",
@@ -453,6 +450,20 @@ extern fn sum(a: Vec<Int>) -> Int {
 extern fn sum(a: Vec<Int>, initial: Int) -> Int {
     cpp_name: "convenience_7",
     code: "Obj<std::int64_t> convenience_7(Obj<IntVec> a, Obj<std::int64_t> initial, [[maybe_unused]] Loc loc) { std::int64_t total=*initial; for(const auto& x:*a) total=checked_int(static_cast<__int128>(total)+*x,loc); return make_obj<std::int64_t>(total); }",
+}
+
+fn find<T>(a: Vec<T>, value: T) -> Option<Int> {
+    let it := __iter__(a);
+    let index := 0;
+    while __iter_has_next__(it) {
+        let current := __iter_next__(it);
+        let matched: Bool := current == value;
+        // Validate even a successful comparison before returning its index.
+        __iter_has_next__(it);
+        if matched { return Some(copy(index)); }
+        index += 1;
+    }
+    return None::<Int>();
 }
 
 extern fn __bitand__(a: Int, b: Int) -> Int {
