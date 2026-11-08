@@ -148,7 +148,9 @@ wt a;  // 10 7 7
 
 ## メソッド形式
 
-`a.f(x, y)` は `f(a, x, y)` と同じ関数呼び出しです。メソッド専用の定義構文はありません。関数値を持つフィールドなどの呼び出しには[関数値の規則](beta04.md)が適用されます。
+`a.f(x, y)` は `f(a, x, y)` の糖衣構文です。この仕組みを **UFCS（Uniform Function Call Syntax／統一関数呼び出し構文）** と呼びます。一般的な概念については [Wikipedia日本語版: Uniform Function Call Syntax](https://ja.wikipedia.org/wiki/Uniform_Function_Call_Syntax) を参照してください。
+
+メソッド専用の定義構文はありません。関数値を持つフィールドなどの呼び出しには[関数値の規則](beta04.md)が適用されます。
 
 ```text
 let a := [1, 2];
